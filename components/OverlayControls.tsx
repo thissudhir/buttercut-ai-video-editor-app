@@ -13,27 +13,35 @@ export function OverlayControls({
     onAddClip,
 }: OverlayControlsProps) {
     return (
-        <View className="flex-row justify-between mb-4 gap-2">
-            <TouchableOpacity
-                onPress={onAddText}
-                className="flex-1 bg-blue-500 rounded-xl py-3 items-center shadow-md active:bg-blue-600"
-            >
-                <Text className="text-white font-bold text-base">Text</Text>
-            </TouchableOpacity>
+        <View className="bg-lr-card rounded-lg p-3 mb-4 border border-lr-border">
+            <Text className="text-lr-text-secondary text-xs font-semibold uppercase tracking-wider mb-3 px-1">
+                Add Overlay
+            </Text>
+            <View className="flex-row justify-between gap-2">
+                <TouchableOpacity
+                    onPress={onAddText}
+                    className="flex-1 bg-lr-blue rounded-lg py-3 items-center active:bg-lr-blue-dark"
+                    activeOpacity={0.8}
+                >
+                    <Text className="text-white font-semibold text-sm">Text</Text>
+                </TouchableOpacity>
 
-            <TouchableOpacity
-                onPress={onAddImage}
-                className="flex-1 bg-green-500 rounded-xl py-3 items-center shadow-md active:bg-green-600"
-            >
-                <Text className="text-white font-bold text-base">Image</Text>
-            </TouchableOpacity>
+                <TouchableOpacity
+                    onPress={onAddImage}
+                    className="flex-1 bg-lr-teal rounded-lg py-3 items-center active:bg-lr-teal-dark"
+                    activeOpacity={0.8}
+                >
+                    <Text className="text-white font-semibold text-sm">Image</Text>
+                </TouchableOpacity>
 
-            <TouchableOpacity
-                onPress={onAddClip}
-                className="flex-1 bg-purple-500 rounded-xl py-3 items-center shadow-md active:bg-purple-600"
-            >
-                <Text className="text-white font-bold text-base">Clip</Text>
-            </TouchableOpacity>
+                <TouchableOpacity
+                    onPress={onAddClip}
+                    className="flex-1 bg-lr-purple rounded-lg py-3 items-center active:bg-lr-purple-dark"
+                    activeOpacity={0.8}
+                >
+                    <Text className="text-white font-semibold text-sm">Clip</Text>
+                </TouchableOpacity>
+            </View>
         </View>
     );
 }

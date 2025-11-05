@@ -5,23 +5,33 @@ interface ActionButtonProps {
     title: string;
     onPress: () => void;
     variant?: "primary" | "secondary";
+    disabled?: boolean;
 }
 
 export function ActionButton({
     title,
     onPress,
-    variant = "primary"
+    variant = "primary",
+    disabled = false
 }: ActionButtonProps) {
     const bgColor = variant === "primary"
-        ? "bg-indigo-600 active:bg-indigo-700"
-        : "bg-gray-700 active:bg-gray-800";
+        ? disabled
+            ? "bg-lr-border"
+            : "bg-lr-blue active:bg-lr-blue-dark"
+        : disabled
+            ? "bg-lr-card"
+            : "bg-lr-card active:bg-lr-panel border-2 border-lr-border";
+
+    const textColor = disabled ? "text-lr-text-tertiary" : "text-lr-text-primary";
 
     return (
         <TouchableOpacity
             onPress={onPress}
-            className={`${bgColor} rounded-xl py-4 items-center shadow-lg mb-3`}
+            disabled={disabled}
+            className={`${bgColor} rounded-lg py-3.5 px-6 items-center justify-center mb-3 shadow-lg`}
+            activeOpacity={0.8}
         >
-            <Text className="text-white font-bold text-base">
+            <Text className={`${textColor} font-semibold text-base tracking-wide`}>
                 {title}
             </Text>
         </TouchableOpacity>

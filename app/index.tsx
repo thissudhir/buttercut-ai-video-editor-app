@@ -1,13 +1,13 @@
 import EditorScreen from "@/components/EditorScreen";
-import { ScrollView, Text, View } from "react-native";
+import { View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 export default function Index() {
   return (
-    <ScrollView>
+    <View className="flex-1 bg-lr-darker">
       <SafeAreaView style={{ flex: 1 }}>
         <EditorScreen />
       </SafeAreaView>
-    </ScrollView>
+    </View>
   );
 }
