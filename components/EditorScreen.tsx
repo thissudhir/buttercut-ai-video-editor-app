@@ -39,7 +39,7 @@ export default function EditorScreen() {
   async function pickImageForOverlay(): Promise<void> {
     try {
       const res = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: "images" as any,  
+        mediaTypes: "images" as any,
         allowsEditing: false,
         quality: 1,
       });
@@ -51,14 +51,36 @@ export default function EditorScreen() {
     }
   }
 
+  async function pickVideoForOverlay(): Promise<void> {
+    try {
+      const res = await DocumentPicker.getDocumentAsync({
+        type: "video/*",
+        copyToCacheDirectory: true,
+      });
+      if (!res.canceled && res.assets && res.assets.length > 0) {
+        addOverlay({ type: "video", content: res.assets[0].uri });
+      }
+    } catch (err) {
+      console.error("Error picking video clip:", err);
+    }
+  }
+
   function addOverlay(partialOverlay: Partial<Omit<Overlay, "id">>): void {
+    if (!videoUri) {
+      Alert.alert("Error", "Please select a video to add an overlay.");
+      return;
+    }
     const id = Date.now().toString();
+    const currentTime = player.currentTime;
+    const startTime =
+      typeof currentTime === "number" && !isNaN(currentTime) ? currentTime : 0;
+
     const newOverlay: Overlay = {
       id,
       x: 50,
       y: 50,
-      start_time: 0,
-      end_time: 3,
+      start_time: startTime,
+      end_time: startTime + 3,
       type: "text",
       content: "",
       ...partialOverlay,
@@ -109,7 +131,7 @@ export default function EditorScreen() {
               name: imageName,
               type: "image/jpeg",
             } as any);
-            return { ...overlay, content: imageName }; 
+            return { ...overlay, content: imageName };
           } else if (overlay.type === "video" && overlay.content.startsWith("file://")) {
             const videoName = overlay.content.split("/").pop() || `clip_${index}.mp4`;
             formData.append(`overlay_file_${index}`, {
@@ -123,11 +145,11 @@ export default function EditorScreen() {
         })
       );
 
-      
+
       const metadata = { overlays: processedOverlays };
       formData.append("metadata", JSON.stringify(metadata));
 
-      
+
       const apiUrl = process.env.EXPO_PUBLIC_API_URL || "http://localhost:8000";
       console.log("API URL:", apiUrl);
       console.log("Uploading to:", `${apiUrl}/api/v1/upload`);
@@ -165,8 +187,8 @@ export default function EditorScreen() {
       <View className="p-4">
         {/* Header Section */}
         <View className="mb-6">
-          <Text className="text-lr-text-primary text-2xl font-bold mb-1">Video Editor</Text>
-          <Text className="text-lr-text-tertiary text-sm">Add overlays and export your video</Text>
+          <Text className="text-lr-text-primary text-2xl font-bold mb-1">Buttercut.ai</Text>
+          <Text className="text-lr-text-tertiary text-sm">Export your video & add overlays</Text>
         </View>
 
         {/* Pick Video Button */}
@@ -191,19 +213,10 @@ export default function EditorScreen() {
               addOverlay({
                 type: "text",
                 content: textValue || "Hello",
-                start_time: 0,
-                end_time: 3,
               })
             }
             onAddImage={pickImageForOverlay}
-            onAddClip={() =>
-              addOverlay({
-                type: "video",
-                content: "",
-                start_time: 1,
-                end_time: 4,
-              })
-            }
+            onAddClip={pickVideoForOverlay}
           />
 
           <TextInputField value={textValue} onChangeText={setTextValue} />
