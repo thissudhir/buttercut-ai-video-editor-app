@@ -25,15 +25,25 @@ export function VideoPreview({
 
     // Sync button state with actual player state
     React.useEffect(() => {
+        if (!player || !videoUri) {
+            setIsPlaying(false);
+            return;
+        }
+
         const updatePlayingState = () => {
-            setIsPlaying(player.playing);
+            try {
+                setIsPlaying(player.playing || false);
+            } catch (error) {
+                // Player not ready yet, ignore
+                setIsPlaying(false);
+            }
         };
 
         // Update immediately
         updatePlayingState();
 
         // Check player state periodically
-        const interval = setInterval(updatePlayingState, 100);
+        const interval = setInterval(updatePlayingState, 200);
 
         return () => clearInterval(interval);
     }, [player, videoUri]);
