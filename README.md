@@ -1,4 +1,4 @@
-# Video Editor App - Frontend (React Native + Expo)
+# Buttercut.ai App - Frontend (React Native + Expo)
 
 A video editing application built with React Native and Expo that allows users to upload videos, add overlays (text, images, and video clips), and preview them in real-time.
 
