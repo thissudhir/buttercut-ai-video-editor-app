@@ -3,7 +3,7 @@ import { Overlay, EditorState, OverlayUpdate, ClipboardData } from '../types/typ
 
 // Action types
 type EditorAction =
-  | { type: 'SET_VIDEO'; payload: { uri: string; duration: number } }
+  | { type: 'SET_VIDEO'; payload: { uri: string; duration: number; width: number; height: number } }
   | { type: 'ADD_OVERLAY'; payload: Overlay }
   | { type: 'UPDATE_OVERLAY'; payload: OverlayUpdate }
   | { type: 'DELETE_OVERLAY'; payload: string }
@@ -27,6 +27,8 @@ type EditorAction =
 const initialState: EditorState = {
   videoUri: null,
   videoDuration: 0,
+  videoWidth: 1920,
+  videoHeight: 1080,
   overlays: [],
   selectedOverlayIds: [],
   currentTime: 0,
@@ -49,6 +51,8 @@ function editorReducer(state: EditorState, action: EditorAction): EditorState {
         ...initialState,
         videoUri: action.payload.uri,
         videoDuration: action.payload.duration,
+        videoWidth: action.payload.width,
+        videoHeight: action.payload.height,
       };
 
     case 'ADD_OVERLAY':
@@ -218,7 +222,7 @@ function editorReducer(state: EditorState, action: EditorAction): EditorState {
 // Context type
 interface EditorContextType {
   state: EditorState;
-  setVideo: (uri: string, duration: number) => void;
+  setVideo: (uri: string, duration: number, width: number, height: number) => void;
   addOverlay: (overlay: Overlay) => void;
   updateOverlay: (update: OverlayUpdate) => void;
   deleteOverlay: (id: string) => void;
@@ -245,8 +249,8 @@ const EditorContext = createContext<EditorContextType | undefined>(undefined);
 export function EditorProvider({ children }: { children: ReactNode }) {
   const [state, dispatch] = useReducer(editorReducer, initialState);
 
-  const setVideo = useCallback((uri: string, duration: number) => {
-    dispatch({ type: 'SET_VIDEO', payload: { uri, duration } });
+  const setVideo = useCallback((uri: string, duration: number, width: number, height: number) => {
+    dispatch({ type: 'SET_VIDEO', payload: { uri, duration, width, height } });
   }, []);
 
   const addOverlay = useCallback((overlay: Overlay) => {

@@ -1,5 +1,5 @@
 import React, { useCallback, useState, useEffect } from 'react';
-import { View, Text, Pressable, ScrollView, ActivityIndicator } from 'react-native';
+import { View, Text, Pressable, ScrollView, ActivityIndicator, Dimensions } from 'react-native';
 import * as DocumentPicker from 'expo-document-picker';
 import * as ImagePicker from 'expo-image-picker';
 import { useVideoPlayer } from 'expo-video';
@@ -16,6 +16,11 @@ import { OverlayControls } from './OverlayControls';
 import { TextInputField } from './TextInputField';
 import { ActionButton } from './ActionButton';
 import { JobStatus } from './JobStatus';
+
+// Preview dimensions (must match VideoPreview component)
+const screenWidth = Dimensions.get('window').width;
+const PREVIEW_WIDTH = screenWidth - 32;
+const PREVIEW_HEIGHT = (PREVIEW_WIDTH * 4) / 3;
 
 export default function EditorScreen() {
     const {
@@ -36,6 +41,7 @@ export default function EditorScreen() {
         duplicateOverlay,
         copyOverlays,
         pasteOverlays,
+        saveStateToHistory,
     } = useEditor();
 
     const { uploadVideo, getJobStatus, getResultUrl, isUploading } = useVideoAPI();
@@ -76,17 +82,31 @@ export default function EditorScreen() {
             if (result.canceled) return;
 
             const videoUri = result.assets[0].uri;
-            setVideo(videoUri, 60); // Default duration, will be updated by player
+            setVideo(videoUri, 60, 1920, 1080); // Default values, will be updated by player
             success('Video loaded successfully');
 
-            // Get actual duration once player is ready
+            // Get actual duration and dimensions once player is ready
             setTimeout(() => {
                 try {
                     if (player && player.duration) {
-                        setVideo(videoUri, player.duration);
+                        // Get video dimensions from player
+                        const width = (player as any).videoWidth || 1920;
+                        const height = (player as any).videoHeight || 1080;
+                        setVideo(videoUri, player.duration, width, height);
                     }
                 } catch (e) {
-                    // Player not ready yet
+                    // Player not ready yet, retry
+                    setTimeout(() => {
+                        try {
+                            if (player && player.duration) {
+                                const width = (player as any).videoWidth || 1920;
+                                const height = (player as any).videoHeight || 1080;
+                                setVideo(videoUri, player.duration, width, height);
+                            }
+                        } catch (e2) {
+                            // Use defaults
+                        }
+                    }, 2000);
                 }
             }, 1000);
         } catch (err: any) {
@@ -241,6 +261,12 @@ export default function EditorScreen() {
         setZoom(1);
     }, [setZoom]);
 
+    // Handle overlay drag with undo support
+    const handleOverlayDragEnd = useCallback((overlay: any) => {
+        saveStateToHistory();
+        updateOverlay(overlay);
+    }, [saveStateToHistory, updateOverlay]);
+
     // Submit to backend
     const submitToBackend = useCallback(async () => {
         if (!state.videoUri) {
@@ -262,7 +288,16 @@ export default function EditorScreen() {
                 }
             });
 
-            const response = await uploadVideo(state.videoUri, state.overlays, overlayFiles);
+            // Upload with coordinate scaling from preview to video dimensions
+            const response = await uploadVideo(
+                state.videoUri,
+                state.overlays,
+                overlayFiles,
+                PREVIEW_WIDTH,
+                PREVIEW_HEIGHT,
+                state.videoWidth,
+                state.videoHeight
+            );
 
             if (response) {
                 setCurrentJobId(response.job_id);
@@ -273,7 +308,7 @@ export default function EditorScreen() {
         } catch (err: any) {
             error('Upload failed: ' + err.message);
         }
-    }, [state.videoUri, state.overlays, uploadVideo, success, error]);
+    }, [state.videoUri, state.overlays, state.videoWidth, state.videoHeight, uploadVideo, success, error]);
 
     // Get selected overlays for property panel
     const selectedOverlays = state.overlays.filter(o =>
@@ -286,7 +321,7 @@ export default function EditorScreen() {
                 {/* Header */}
                 <View className="flex-row justify-between items-center mb-4">
                     <Text className="text-lr-text-primary text-2xl font-bold">
-                        Buttercut.ai Editor
+                        Buttercut.ai
                     </Text>
                     {state.overlays.length > 0 && (
                         <Pressable
@@ -321,7 +356,7 @@ export default function EditorScreen() {
                             zoom={state.zoom}
                             snapToGrid={state.snapToGrid}
                             gridSize={state.gridSize}
-                            onOverlayDragEnd={updateOverlay}
+                            onOverlayDragEnd={handleOverlayDragEnd}
                             onOverlaySelect={selectOverlay}
                             onTogglePlay={() => setPlaying(!state.isPlaying)}
                         />
@@ -390,7 +425,7 @@ export default function EditorScreen() {
                         {/* Export Button */}
                         <View className="mt-6">
                             <ActionButton
-                                title={isUploading ? '⏳ Uploading...' : '🚀 Export Video'}
+                                title={isUploading ? ' Uploading...' : 'Export Video'}
                                 onPress={submitToBackend}
                                 variant="primary"
                                 disabled={isUploading || state.overlays.length === 0}
@@ -402,7 +437,7 @@ export default function EditorScreen() {
                 {/* Info */}
                 <View className="mt-4 p-4 bg-lr-panel rounded-lg">
                     <Text className="text-lr-text-secondary text-xs">
-                        💡 Tip: Select multiple overlays to align and distribute them.
+                        Tip: Select multiple overlays to align and distribute them.
                         Use undo/redo for non-destructive editing.
                     </Text>
                 </View>

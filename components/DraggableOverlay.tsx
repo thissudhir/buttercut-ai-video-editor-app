@@ -70,13 +70,24 @@ export default React.memo(function DraggableOverlay({
         }
     }, [overlay.content, overlay.type, videoPlayer]);
 
+    // Track if this was a drag or just a tap
+    const wasDragged = useRef(false);
+
     // Create PanResponder with useCallback to ensure it updates properly
     const panResponder = useRef(
         PanResponder.create({
             onStartShouldSetPanResponder: () => !overlay.locked,
-            onMoveShouldSetPanResponder: () => !overlay.locked,
+            onStartShouldSetPanResponderCapture: () => !overlay.locked,
+            onMoveShouldSetPanResponder: (_, gestureState) => {
+                // Only become responder if moved more than 2 pixels (helps distinguish tap from drag)
+                return !overlay.locked && (Math.abs(gestureState.dx) > 2 || Math.abs(gestureState.dy) > 2);
+            },
+            onMoveShouldSetPanResponderCapture: (_, gestureState) => {
+                return !overlay.locked && (Math.abs(gestureState.dx) > 2 || Math.abs(gestureState.dy) > 2);
+            },
             onPanResponderGrant: () => {
                 isDragging.current = true;
+                wasDragged.current = false;
                 dragStartPos.current = { x: position.current.x, y: position.current.y };
 
                 // Handle selection on touch
@@ -90,6 +101,7 @@ export default React.memo(function DraggableOverlay({
             ) => {
                 if (overlay.locked) return;
 
+                wasDragged.current = true;
                 let newX = dragStartPos.current.x + gestureState.dx;
                 let newY = dragStartPos.current.y + gestureState.dy;
 
@@ -120,37 +132,42 @@ export default React.memo(function DraggableOverlay({
                     return;
                 }
 
-                let finalX = dragStartPos.current.x + gestureState.dx;
-                let finalY = dragStartPos.current.y + gestureState.dy;
+                // Only update if actually dragged
+                if (wasDragged.current) {
+                    let finalX = dragStartPos.current.x + gestureState.dx;
+                    let finalY = dragStartPos.current.y + gestureState.dy;
 
-                // Apply snap to grid on release
-                if (snapEnabled) {
-                    finalX = snapToGrid(finalX, gridSize);
-                    finalY = snapToGrid(finalY, gridSize);
+                    // Apply snap to grid on release
+                    if (snapEnabled) {
+                        finalX = snapToGrid(finalX, gridSize);
+                        finalY = snapToGrid(finalY, gridSize);
+                    }
+
+                    // Constrain to non-negative values
+                    finalX = Math.max(0, finalX);
+                    finalY = Math.max(0, finalY);
+
+                    // Update position ref
+                    position.current = { x: finalX, y: finalY };
+
+                    // Notify parent component
+                    console.log(`Overlay ${overlay.id} dragged to position: x=${finalX}, y=${finalY}`);
+                    onDragEnd({
+                        ...overlay,
+                        x: finalX,
+                        y: finalY
+                    });
                 }
 
-                // Constrain to non-negative values
-                finalX = Math.max(0, finalX);
-                finalY = Math.max(0, finalY);
-
-                // Update position ref
-                position.current = { x: finalX, y: finalY };
-
-                // Notify parent component
-                onDragEnd({
-                    ...overlay,
-                    x: finalX,
-                    y: finalY
-                });
-
                 isDragging.current = false;
+                wasDragged.current = false;
             },
         })
     ).current;
 
-    // Handle tap for selection
+    // Handle tap for selection (only if not dragged)
     const handlePress = useCallback(() => {
-        if (onSelect && !overlay.locked) {
+        if (onSelect && !overlay.locked && !wasDragged.current) {
             onSelect(overlay.id, false);
         }
     }, [onSelect, overlay.id, overlay.locked]);
@@ -185,14 +202,14 @@ export default React.memo(function DraggableOverlay({
                     { scale: scale },
                 ],
             }}
+            {...(!overlay.locked ? panResponder.panHandlers : {})}
         >
-            <View
-                {...(!overlay.locked ? panResponder.panHandlers : {})}
+            <Pressable
+                onPress={handlePress}
+                disabled={overlay.locked}
+                style={{ flex: 1 }}
             >
-                <Pressable
-                    onPress={handlePress}
-                    disabled={overlay.locked}
-                >
+                <View>
                     {overlay.type === "text" ? (
                         <View
                             className={`bg-black/70 rounded-lg px-3 py-2 ${
@@ -281,8 +298,8 @@ export default React.memo(function DraggableOverlay({
                             <View className="absolute -bottom-1 -right-1 w-3 h-3 bg-yellow-400 rounded-full" />
                         </>
                     )}
-                </Pressable>
-            </View>
+                </View>
+            </Pressable>
         </View>
     );
 });

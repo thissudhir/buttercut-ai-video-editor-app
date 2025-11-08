@@ -12,7 +12,11 @@ export function useVideoAPI() {
   const uploadVideo = useCallback(async (
     videoUri: string,
     overlays: any[],
-    overlayFiles: { [key: number]: string } = {}
+    overlayFiles: { [key: number]: string } = {},
+    previewWidth: number = 360,
+    previewHeight: number = 480,
+    videoWidth: number = 1920,
+    videoHeight: number = 1080
   ): Promise<UploadResponse | null> => {
     setIsUploading(true);
     setError(null);
@@ -38,8 +42,27 @@ export function useVideoAPI() {
         } as any);
       });
 
-      // Add metadata
-      formData.append('metadata', JSON.stringify({ overlays }));
+      // Scale overlay coordinates from preview to video dimensions
+      const scaleX = videoWidth / previewWidth;
+      const scaleY = videoHeight / previewHeight;
+
+      console.log(`Coordinate scaling: preview=${previewWidth}x${previewHeight}, video=${videoWidth}x${videoHeight}`);
+      console.log(`Scale factors: scaleX=${scaleX.toFixed(2)}, scaleY=${scaleY.toFixed(2)}`);
+
+      const scaledOverlays = overlays.map((overlay, index) => {
+        const scaled = {
+          ...overlay,
+          x: Math.round(overlay.x * scaleX),
+          y: Math.round(overlay.y * scaleY),
+          width: overlay.width ? Math.round(overlay.width * scaleX) : overlay.width,
+          height: overlay.height ? Math.round(overlay.height * scaleY) : overlay.height,
+        };
+        console.log(`Overlay ${index}: preview(${overlay.x}, ${overlay.y}) -> video(${scaled.x}, ${scaled.y})`);
+        return scaled;
+      });
+
+      // Add metadata with scaled coordinates
+      formData.append('metadata', JSON.stringify({ overlays: scaledOverlays }));
 
       const response = await fetch(`${API_URL}/api/v1/upload`, {
         method: 'POST',

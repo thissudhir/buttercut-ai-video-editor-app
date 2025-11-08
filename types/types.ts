@@ -10,22 +10,22 @@ export interface Overlay {
   start_time: number;
   end_time: number;
 
-  // Professional editing properties
-  opacity?: number;        // 0-1, default 1
-  rotation?: number;       // degrees, default 0
-  scale?: number;          // multiplier, default 1
-  zIndex?: number;         // layer order, default 0
+  // editing properties
+  opacity?: number;        
+  rotation?: number;       
+  scale?: number;          
+  zIndex?: number;         
 
   // Text-specific properties
-  fontSize?: number;       // default 24
-  fontColor?: string;      // hex color, default "#FFFFFF"
-  fontFamily?: string;     // font name, default "system"
+  fontSize?: number;      
+  fontColor?: string;      
+  fontFamily?: string;    
   textAlign?: "left" | "center" | "right";
   fontWeight?: "normal" | "bold";
 
   // Advanced properties
-  locked?: boolean;        // prevent editing/moving
-  visible?: boolean;       // show/hide overlay
+  locked?: boolean;        
+  visible?: boolean;       
 }
 
 // Partial overlay for updates
@@ -47,6 +47,8 @@ export interface VideoProject {
 export interface EditorState {
   videoUri: string | null;
   videoDuration: number;
+  videoWidth: number;
+  videoHeight: number;
   overlays: Overlay[];
   selectedOverlayIds: string[];
   currentTime: number;
