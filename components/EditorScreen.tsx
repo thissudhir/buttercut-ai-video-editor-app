@@ -1,248 +1,423 @@
-import React, { useState } from "react";
-import { View, Alert, ScrollView, Text } from "react-native";
-import * as DocumentPicker from "expo-document-picker";
-import * as ImagePicker from "expo-image-picker";
-import { useVideoPlayer } from "expo-video";
-import { Overlay } from "../types/types";
-import { VideoPreview } from "./VideoPreview";
-import { OverlayControls } from "./OverlayControls";
-import { TextInputField } from "./TextInputField";
-import { OverlayList } from "./OverlayList";
-import { ActionButton } from "./ActionButton";
-import { JobStatus } from "./JobStatus";
+import React, { useCallback, useState, useEffect } from 'react';
+import { View, Text, Pressable, ScrollView, ActivityIndicator } from 'react-native';
+import * as DocumentPicker from 'expo-document-picker';
+import * as ImagePicker from 'expo-image-picker';
+import { useVideoPlayer } from 'expo-video';
+import { useEditor } from '../contexts/EditorContext';
+import { useVideoAPI } from '../hooks/useVideoAPI';
+import { useToast } from '../hooks/useToast';
+import { createOverlay, alignOverlays, distributeOverlays } from '../utils/overlayUtils';
+import VideoPreview from './VideoPreview';
+import Timeline from './Timeline';
+import PropertyPanel from './PropertyPanel';
+import Toolbar from './Toolbar';
+import ToastContainer from './ToastContainer';
+import { OverlayControls } from './OverlayControls';
+import { TextInputField } from './TextInputField';
+import { ActionButton } from './ActionButton';
+import { JobStatus } from './JobStatus';
 
 export default function EditorScreen() {
-  const [videoUri, setVideoUri] = useState<string | null>(null);
-  const [overlays, setOverlays] = useState<Overlay[]>([]);
-  const [textValue, setTextValue] = useState<string>("");
-  const [currentJobId, setCurrentJobId] = useState<string | null>(null);
+    const {
+        state,
+        setVideo,
+        addOverlay,
+        updateOverlay,
+        deleteOverlay,
+        deleteSelectedOverlays,
+        selectOverlay,
+        deselectAll,
+        setCurrentTime,
+        setPlaying,
+        setZoom,
+        toggleSnapToGrid,
+        undo,
+        redo,
+        duplicateOverlay,
+        copyOverlays,
+        pasteOverlays,
+    } = useEditor();
 
-  const player = useVideoPlayer(videoUri || "", (player) => {
-    player.loop = false;
-    player.play();
-  });
+    const { uploadVideo, getJobStatus, getResultUrl, isUploading } = useVideoAPI();
+    const { toasts, showToast, hideToast, success, error } = useToast();
 
-  async function pickVideo(): Promise<void> {
-    try {
-      const res = await DocumentPicker.getDocumentAsync({
-        type: "video/*",
-        copyToCacheDirectory: true,
-      });
-      if (!res.canceled && res.assets && res.assets.length > 0) {
-        setVideoUri(res.assets[0].uri);
-      }
-    } catch (err) {
-      console.error("Error picking video:", err);
-    }
-  }
+    const [textValue, setTextValue] = useState('');
+    const [currentJobId, setCurrentJobId] = useState<string | null>(null);
+    const [showPropertyPanel, setShowPropertyPanel] = useState(false);
 
-  async function pickImageForOverlay(): Promise<void> {
-    try {
-      const res = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: "images" as any,
-        allowsEditing: false,
-        quality: 1,
-      });
-      if (!res.canceled && res.assets && res.assets.length > 0) {
-        addOverlay({ type: "image", content: res.assets[0].uri });
-      }
-    } catch (err) {
-      console.error("Error picking image:", err);
-    }
-  }
+    // Create video player
+    const player = useVideoPlayer(state.videoUri || '', (player) => {
+        player.pause();
+    });
 
-  async function pickVideoForOverlay(): Promise<void> {
-    try {
-      const res = await DocumentPicker.getDocumentAsync({
-        type: "video/*",
-        copyToCacheDirectory: true,
-      });
-      if (!res.canceled && res.assets && res.assets.length > 0) {
-        addOverlay({ type: "video", content: res.assets[0].uri });
-      }
-    } catch (err) {
-      console.error("Error picking video clip:", err);
-    }
-  }
+    // Sync current time from player
+    useEffect(() => {
+        if (!player) return;
 
-  function addOverlay(partialOverlay: Partial<Omit<Overlay, "id">>): void {
-    if (!videoUri) {
-      Alert.alert("Error", "Please select a video to add an overlay.");
-      return;
-    }
-    const id = Date.now().toString();
-    const currentTime = player.currentTime;
-    const startTime =
-      typeof currentTime === "number" && !isNaN(currentTime) ? currentTime : 0;
-
-    const newOverlay: Overlay = {
-      id,
-      x: 50,
-      y: 50,
-      start_time: startTime,
-      end_time: startTime + 3,
-      type: "text",
-      content: "",
-      ...partialOverlay,
-    };
-    setOverlays((prev) => [...prev, newOverlay]);
-  }
-
-  function onDragEnd(updated: Overlay): void {
-    setOverlays((prev) =>
-      prev.map((o) => (o.id === updated.id ? updated : o))
-    );
-  }
-
-  function updateOverlay(updated: Overlay): void {
-    setOverlays((prev) =>
-      prev.map((o) => (o.id === updated.id ? updated : o))
-    );
-  }
-
-  function deleteOverlay(id: string): void {
-    setOverlays((prev) => prev.filter((o) => o.id !== id));
-  }
-
-  async function submitToBackend(): Promise<void> {
-    if (!videoUri) {
-      Alert.alert("Error", "Please select a video first");
-      return;
-    }
-
-    try {
-      const formData = new FormData();
-      const filename = videoUri.split("/").pop() || "video.mp4";
-
-      // Upload main video file
-      formData.append("video", {
-        uri: videoUri,
-        name: filename,
-        type: "video/mp4",
-      } as any);
-
-      // Upload image/video overlay files if they exist
-      const processedOverlays = await Promise.all(
-        overlays.map(async (overlay, index) => {
-          if (overlay.type === "image" && overlay.content.startsWith("file://")) {
-            const imageName = overlay.content.split("/").pop() || `image_${index}.jpg`;
-            formData.append(`overlay_file_${index}`, {
-              uri: overlay.content,
-              name: imageName,
-              type: "image/jpeg",
-            } as any);
-            return { ...overlay, content: imageName };
-          } else if (overlay.type === "video" && overlay.content.startsWith("file://")) {
-            const videoName = overlay.content.split("/").pop() || `clip_${index}.mp4`;
-            formData.append(`overlay_file_${index}`, {
-              uri: overlay.content,
-              name: videoName,
-              type: "video/mp4",
-            } as any);
-            return { ...overlay, content: videoName };
-          }
-          return overlay;
-        })
-      );
-
-
-      const metadata = { overlays: processedOverlays };
-      formData.append("metadata", JSON.stringify(metadata));
-
-
-      const apiUrl = process.env.EXPO_PUBLIC_API_URL || "http://localhost:8000";
-      console.log("API URL:", apiUrl);
-      console.log("Uploading to:", `${apiUrl}/api/v1/upload`);
-      console.log("Video URI:", videoUri);
-      console.log("Video filename:", filename);
-
-      const response = await fetch(`${apiUrl}/api/v1/upload`, {
-        method: "POST",
-        body: formData,
-        headers: {
-          Accept: "application/json",
-        },
-      });
-
-      const data = await response.json();
-      if (response.ok && data.job_id) {
-        setCurrentJobId(data.job_id);
-        Alert.alert("Success!", "Video uploaded successfully. Processing started.");
-      } else {
-        const errorMsg = data.detail || "Upload failed. Please try again.";
-        Alert.alert("Error", errorMsg);
-      }
-    } catch (err) {
-      console.error("Upload error:", err);
-      const apiUrl = process.env.EXPO_PUBLIC_API_URL || "http://localhost:8000";
-      Alert.alert(
-        "Connection Error",
-        `Cannot connect to backend at ${apiUrl}\n\nMake sure:\n1. Backend is running on port 8000\n2. Run: curl http://localhost:8000/health\n\nError: ${err}`
-      );
-    }
-  }
-
-  return (
-    <ScrollView className="flex-1 bg-lr-darker">
-      <View className="p-4">
-        {/* Header Section */}
-        <View className="mb-6">
-          <Text className="text-lr-text-primary text-2xl font-bold mb-1">Buttercut.ai</Text>
-          <Text className="text-lr-text-tertiary text-sm">Export your video & add overlays</Text>
-        </View>
-
-        {/* Pick Video Button */}
-        <ActionButton
-          title="Select Video"
-          onPress={pickVideo}
-          variant="secondary"
-        />
-
-        {/* Video Preview */}
-        <VideoPreview
-          videoUri={videoUri}
-          player={player}
-          overlays={overlays}
-          onOverlayDragEnd={onDragEnd}
-        />
-
-        {/* Overlay Controls Section */}
-        <View className="mb-6">
-          <OverlayControls
-            onAddText={() =>
-              addOverlay({
-                type: "text",
-                content: textValue || "Hello",
-              })
+        const interval = setInterval(() => {
+            try {
+                const time = player.currentTime || 0;
+                setCurrentTime(time);
+            } catch (e) {
+                // Player not ready
             }
-            onAddImage={pickImageForOverlay}
-            onAddClip={pickVideoForOverlay}
-          />
+        }, 100);
 
-          <TextInputField value={textValue} onChangeText={setTextValue} />
+        return () => clearInterval(interval);
+    }, [player, setCurrentTime]);
+
+    // Video selection
+    const pickVideo = useCallback(async () => {
+        try {
+            const result = await DocumentPicker.getDocumentAsync({
+                type: 'video/*',
+            });
+
+            if (result.canceled) return;
+
+            const videoUri = result.assets[0].uri;
+            setVideo(videoUri, 60); // Default duration, will be updated by player
+            success('Video loaded successfully');
+
+            // Get actual duration once player is ready
+            setTimeout(() => {
+                try {
+                    if (player && player.duration) {
+                        setVideo(videoUri, player.duration);
+                    }
+                } catch (e) {
+                    // Player not ready yet
+                }
+            }, 1000);
+        } catch (err: any) {
+            error('Failed to load video: ' + err.message);
+        }
+    }, [setVideo, player, success, error]);
+
+    // Add text overlay
+    const addTextOverlay = useCallback(() => {
+        if (!textValue.trim()) {
+            error('Please enter some text');
+            return;
+        }
+
+        const overlay = createOverlay(
+            'text',
+            textValue,
+            50,
+            50,
+            state.currentTime,
+            Math.min(state.currentTime + 3, state.videoDuration)
+        );
+
+        addOverlay(overlay);
+        setTextValue('');
+        success('Text overlay added');
+    }, [textValue, state.currentTime, state.videoDuration, addOverlay, success, error]);
+
+    // Add image overlay
+    const addImageOverlay = useCallback(async () => {
+        try {
+            const result = await ImagePicker.launchImageLibraryAsync({
+                mediaTypes: 'images' as any,
+                quality: 1,
+            });
+
+            if (result.canceled) return;
+
+            const overlay = createOverlay(
+                'image',
+                result.assets[0].uri,
+                50,
+                50,
+                state.currentTime,
+                Math.min(state.currentTime + 5, state.videoDuration)
+            );
+
+            addOverlay(overlay);
+            success('Image overlay added');
+        } catch (err: any) {
+            error('Failed to add image: ' + err.message);
+        }
+    }, [state.currentTime, state.videoDuration, addOverlay, success, error]);
+
+    // Add video overlay
+    const addVideoOverlay = useCallback(async () => {
+        try {
+            const result = await DocumentPicker.getDocumentAsync({
+                type: 'video/*',
+            });
+
+            if (result.canceled) return;
+
+            const overlay = createOverlay(
+                'video',
+                result.assets[0].uri,
+                50,
+                50,
+                state.currentTime,
+                Math.min(state.currentTime + 5, state.videoDuration)
+            );
+
+            addOverlay(overlay);
+            success('Video overlay added');
+        } catch (err: any) {
+            error('Failed to add video: ' + err.message);
+        }
+    }, [state.currentTime, state.videoDuration, addOverlay, success, error]);
+
+    // Toolbar actions
+    const handleAlign = useCallback((alignment: any) => {
+        if (state.selectedOverlayIds.length < 2) return;
+
+        const selectedOverlays = state.overlays.filter(o =>
+            state.selectedOverlayIds.includes(o.id)
+        );
+
+        const aligned = alignOverlays(selectedOverlays, alignment);
+
+        aligned.forEach((overlay) => {
+            updateOverlay({ id: overlay.id, x: overlay.x, y: overlay.y });
+        });
+
+        success(`Aligned ${alignment}`);
+    }, [state.overlays, state.selectedOverlayIds, updateOverlay, success]);
+
+    const handleDistribute = useCallback((direction: 'horizontal' | 'vertical') => {
+        if (state.selectedOverlayIds.length < 3) return;
+
+        const selectedOverlays = state.overlays.filter(o =>
+            state.selectedOverlayIds.includes(o.id)
+        );
+
+        const distributed = distributeOverlays(selectedOverlays, direction);
+
+        distributed.forEach((overlay) => {
+            updateOverlay({ id: overlay.id, x: overlay.x, y: overlay.y });
+        });
+
+        success(`Distributed ${direction}ly`);
+    }, [state.overlays, state.selectedOverlayIds, updateOverlay, success]);
+
+    const handleDuplicate = useCallback(() => {
+        if (state.selectedOverlayIds.length === 0) return;
+
+        state.selectedOverlayIds.forEach((id) => {
+            duplicateOverlay(id);
+        });
+
+        success('Overlay duplicated');
+    }, [state.selectedOverlayIds, duplicateOverlay, success]);
+
+    const handleCopy = useCallback(() => {
+        if (state.selectedOverlayIds.length === 0) return;
+
+        copyOverlays(state.selectedOverlayIds);
+        success(`Copied ${state.selectedOverlayIds.length} overlay(s)`);
+    }, [state.selectedOverlayIds, copyOverlays, success]);
+
+    const handlePaste = useCallback(() => {
+        pasteOverlays();
+        success('Overlays pasted');
+    }, [pasteOverlays, success]);
+
+    const handleDelete = useCallback(() => {
+        if (state.selectedOverlayIds.length === 0) return;
+
+        deleteSelectedOverlays();
+        success('Overlays deleted');
+    }, [state.selectedOverlayIds, deleteSelectedOverlays, success]);
+
+    // Zoom controls
+    const handleZoomIn = useCallback(() => {
+        setZoom(state.zoom + 0.25);
+    }, [state.zoom, setZoom]);
+
+    const handleZoomOut = useCallback(() => {
+        setZoom(state.zoom - 0.25);
+    }, [state.zoom, setZoom]);
+
+    const handleZoomReset = useCallback(() => {
+        setZoom(1);
+    }, [setZoom]);
+
+    // Submit to backend
+    const submitToBackend = useCallback(async () => {
+        if (!state.videoUri) {
+            error('Please select a video first');
+            return;
+        }
+
+        if (state.overlays.length === 0) {
+            error('Please add at least one overlay');
+            return;
+        }
+
+        try {
+            // Prepare overlay files
+            const overlayFiles: { [key: number]: string } = {};
+            state.overlays.forEach((overlay, index) => {
+                if (overlay.type === 'image' || overlay.type === 'video') {
+                    overlayFiles[index] = overlay.content;
+                }
+            });
+
+            const response = await uploadVideo(state.videoUri, state.overlays, overlayFiles);
+
+            if (response) {
+                setCurrentJobId(response.job_id);
+                success('Video submitted for processing');
+            } else {
+                error('Failed to upload video');
+            }
+        } catch (err: any) {
+            error('Upload failed: ' + err.message);
+        }
+    }, [state.videoUri, state.overlays, uploadVideo, success, error]);
+
+    // Get selected overlays for property panel
+    const selectedOverlays = state.overlays.filter(o =>
+        state.selectedOverlayIds.includes(o.id)
+    );
+
+    return (
+        <View className="flex-1 bg-lr-darker">
+            <ScrollView className="flex-1 px-4 py-6">
+                {/* Header */}
+                <View className="flex-row justify-between items-center mb-4">
+                    <Text className="text-lr-text-primary text-2xl font-bold">
+                        Buttercut.ai Editor
+                    </Text>
+                    {state.overlays.length > 0 && (
+                        <Pressable
+                            onPress={() => setShowPropertyPanel(!showPropertyPanel)}
+                            className="bg-lr-panel px-3 py-1 rounded"
+                        >
+                            <Text className="text-lr-text-secondary text-xs">
+                                {showPropertyPanel ? 'Hide' : 'Show'} Properties
+                            </Text>
+                        </Pressable>
+                    )}
+                </View>
+
+                {/* Video Selection */}
+                {!state.videoUri && (
+                    <ActionButton
+                        title="📹 Select Video"
+                        onPress={pickVideo}
+                        variant="secondary"
+                    />
+                )}
+
+                {/* Video Preview */}
+                {state.videoUri && (
+                    <>
+                        <VideoPreview
+                            videoUri={state.videoUri}
+                            player={player}
+                            overlays={state.overlays}
+                            selectedOverlayIds={state.selectedOverlayIds}
+                            currentTime={state.currentTime}
+                            zoom={state.zoom}
+                            snapToGrid={state.snapToGrid}
+                            gridSize={state.gridSize}
+                            onOverlayDragEnd={updateOverlay}
+                            onOverlaySelect={selectOverlay}
+                            onTogglePlay={() => setPlaying(!state.isPlaying)}
+                        />
+
+                        {/* Toolbar */}
+                        <Toolbar
+                            selectedCount={state.selectedOverlayIds.length}
+                            canUndo={state.undoStack.length > 0}
+                            canRedo={state.redoStack.length > 0}
+                            snapToGrid={state.snapToGrid}
+                            zoom={state.zoom}
+                            onUndo={undo}
+                            onRedo={redo}
+                            onAlign={handleAlign}
+                            onDistribute={handleDistribute}
+                            onDuplicate={handleDuplicate}
+                            onCopy={handleCopy}
+                            onPaste={handlePaste}
+                            onDelete={handleDelete}
+                            onToggleSnap={toggleSnapToGrid}
+                            onZoomIn={handleZoomIn}
+                            onZoomOut={handleZoomOut}
+                            onZoomReset={handleZoomReset}
+                        />
+
+                        {/* Timeline */}
+                        <View className="mt-4">
+                            <Timeline
+                                duration={state.videoDuration}
+                                currentTime={state.currentTime}
+                                overlays={state.overlays}
+                                onSeek={setCurrentTime}
+                                onOverlaySelect={(id) => selectOverlay(id, false)}
+                                selectedOverlayIds={state.selectedOverlayIds}
+                                zoom={1}
+                            />
+                        </View>
+
+                        {/* Add Overlay Controls */}
+                        <View className="mt-4">
+                            <Text className="text-lr-text-primary font-semibold mb-2">
+                                Add Overlay
+                            </Text>
+                            <TextInputField
+                                value={textValue}
+                                onChangeText={setTextValue}
+                            />
+                            <OverlayControls
+                                onAddText={addTextOverlay}
+                                onAddImage={addImageOverlay}
+                                onAddClip={addVideoOverlay}
+                            />
+                        </View>
+
+                        {/* Property Panel */}
+                        {showPropertyPanel && selectedOverlays.length > 0 && (
+                            <View className="mt-4">
+                                <PropertyPanel
+                                    selectedOverlays={selectedOverlays}
+                                    onUpdate={(id, updates) => updateOverlay({ id, ...updates })}
+                                    onClose={() => setShowPropertyPanel(false)}
+                                />
+                            </View>
+                        )}
+
+                        {/* Export Button */}
+                        <View className="mt-6">
+                            <ActionButton
+                                title={isUploading ? '⏳ Uploading...' : '🚀 Export Video'}
+                                onPress={submitToBackend}
+                                variant="primary"
+                                disabled={isUploading || state.overlays.length === 0}
+                            />
+                        </View>
+                    </>
+                )}
+
+                {/* Info */}
+                <View className="mt-4 p-4 bg-lr-panel rounded-lg">
+                    <Text className="text-lr-text-secondary text-xs">
+                        💡 Tip: Select multiple overlays to align and distribute them.
+                        Use undo/redo for non-destructive editing.
+                    </Text>
+                </View>
+            </ScrollView>
+
+            {/* Job Status Modal */}
+            {currentJobId && (
+                <JobStatus
+                    jobId={currentJobId}
+                    onClose={() => setCurrentJobId(null)}
+                />
+            )}
+
+            {/* Toast Notifications */}
+            <ToastContainer toasts={toasts} onDismiss={hideToast} />
         </View>
-
-        {/* Overlays List */}
-        <OverlayList
-          overlays={overlays}
-          onUpdateOverlay={updateOverlay}
-          onDeleteOverlay={deleteOverlay}
-        />
-
-        {/* Export Button */}
-        <ActionButton
-          title="Export Video"
-          onPress={submitToBackend}
-        />
-
-        {/* Job Status Modal */}
-        {currentJobId && (
-          <JobStatus
-            jobId={currentJobId}
-            onClose={() => setCurrentJobId(null)}
-          />
-        )}
-      </View>
-    </ScrollView>
-  );
+    );
 }
